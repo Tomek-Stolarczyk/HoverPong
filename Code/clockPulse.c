@@ -6,8 +6,6 @@
 #define TimerSnapshotL ((volatile short*) (Timer+16))
 #define TimerSnapshotH ((volatile short*) (Timer+20))
 
-#define Duration 0xCB735 // 1/60 seconds
-
 #define RED_LEDS 0xFF200000
 #define GPIO 0xFF200060
 #define LEGO GPIO
@@ -34,8 +32,19 @@
 
 volatile int using_controllers;
 
-volatile int controller1Height;
-volatile int controller2Height;
+extern int p1_h;
+extern int p2_h;
+
+extern int ball_x;
+extern int ball_y;
+
+extern int p1_score;
+extern int p2_score;
+
+extern volatile int ball_radius;
+
+extern int game_paused;
+extern volatile int game_speed;
 
 volatile int prev_controller1Height;
 volatile int prev_controller2Height;
@@ -176,31 +185,14 @@ void interrupt_handler(){
 		 * update ball positions to new positions
 		 * 
 		 */
-		 //(*leds) = *(TimerStatus);
-		    //
-			//subset(26, C_GREEN);
-			//meta_bar(C_BLACK);
-			//border(8,24,2,C_WHITE);
-		 ball(ballPos[0], ballPos[1], C_WHITE);
+		 ball_x = ballPos[0]; // update global ball pos for drawing frame
+		 ball_y = ballPos[1];
+		 update_frame(); // Update only the graphic elements we need
 		 
-		 paddle(PADDLE_1_XOFF, controller1Height, C_YELLOW);
-		 paddle(PADDLE_2_XOFF, controller2Height, C_YELLOW);
-		 (*leds) = (*leds) ^ 0xff;
-		 *(TimerStatus) = 0;
-		 update_ball_with_paddle();
+		 *(TimerStatus) = 0; // clear interrupt
+		 update_ball_with_paddle(); // update ball position
+
 		 
-		 
-		 /*
-		 int whoWon = is_scored();
-		 if(whoWon == 0) // Nobody scored yet
-		 {
-		 	update_ball_only_bounce();
-		 }
-		 else
-		 {
-		 	(*leds) = 0x0F << ((whoWon-1) * 4);
-		 }
-		 */
 	}
 	else if ( ipending & 0x800 )		// Lego controller has IRQ 11
 	{
@@ -216,24 +208,24 @@ void interrupt_handler(){
 		
 		if(whichSensor == 0x01E) // Sensor 1 Triggered
 		{
-			if(!(controller1Height < ControllerMaxHeight))
-				controller1Height -= 1; // Move paddle up one pixel
+			if(!(p1_h < ControllerMaxHeight))
+				p1_h -= 10; // Move paddle up 10 pixels
 		}
 		else if(whichSensor == 0x01D) // Sensor 2 Triggered
 		{
-			if(!(controller1Height > ControllerMinHeight))
-				controller1Height += 1; // Move paddle down one pixel
+			if(!(p1_h > ControllerMinHeight))
+				p1_h += 10; // Move paddle down 10 pixels
 		}
 		
 		if(whichSensor == 0x01B) // Sensor 3 Triggered
 		{
-			if(!(controller2Height < ControllerMaxHeight))
-				controller2Height -= 1; // move paddle up one pixel
+			if(!(p2_h < ControllerMaxHeight))
+				p2_h -= 10; // move paddle up 10 pixels
 		}
 		else if(whichSensor == 0x017) // Sensor 4 Triggered
 		{
-			if(!(controller2Height > ControllerMinHeight))
-				controller2Height += 1; // move paddle down one pixel
+			if(!(p2_h > ControllerMinHeight))
+				p2_h += 10; // move paddle down 10 pixel
 		}
 		
 		if(whichSensor == 0x00F) // Sensor 5. Not used right now.
@@ -244,6 +236,9 @@ void interrupt_handler(){
 	}
 }
 
+/** update the ball position ignoring the position of paddles.
+ *  Used as a stepping stone for collisions
+ */
 void update_ball_only_bounce()
 {
 
@@ -272,9 +267,11 @@ void update_ball_only_bounce()
 	return;
 }
 
+/** now take into account the position of the paddles.
+ * Include with the collision detection notion of a ball radius
+ */
 void update_ball_with_paddle()
 {
-
 	/*
 	 * paddle1 X is at 18 + 8
 	 * paddle1 Y is at controller1Height + 64
@@ -287,17 +284,23 @@ void update_ball_with_paddle()
 	int newBallY = ballPos[1] + ballVel[1];
 
 
-	int BallHitPaddle1 = (newBallX < 18+8) && // Front of paddle here is 18 + 8
-						  (newBallY < controller1Height + 64) && // below the upper bound of the paddle
-						  (newBallY > controller1Height); // above the lower bound of the paddle
+	int BallHitPaddle1 = (newBallX - ball_radius < PADDLE_1_XOFF+8) && // Front of paddle here is 18 + 8
+						  (newBallY - ball_radius < p1_h + 64) && // below the upper bound of the paddle
+						  (newBallY + ball_radius > p1_h); // above the lower bound of the paddle
 	
-	int BallHitPaddle2 = (newBallX > 294) &&  // Don't need the + 8 here because we want to be in front of the paddle
-						  (newBallY < controller2Height + 64) && // below the upper bound of the paddle
-						  (newBallY > controller2Height); // above the lower bound of the paddle
+	int BallHitPaddle2 = (newBallX + ball_radius > PADDLE_2_XOFF) &&  // Don't need the + 8 here because we want to be in front of the paddle
+						  (newBallY - ball_radius < p2_h + 64) && // below the upper bound of the paddle
+						  (newBallY + ball_radius > p2_h); // above the lower bound of the paddle
 
-	if(BallHitPaddle1 || BallHitPaddle2 || newBallX > gameWidth+8 || newBallX < 10) // hit the paddles
+	if(BallHitPaddle1 || BallHitPaddle2 || newBallX + ball_radius > gameWidth+10 || newBallX - ball_radius < 10) // hit the paddles
 	{
+		if(newBallX + ball_radius > gameWidth+10)
+			p1_score++; // if we're hitting the walls, increase the scores as well
+		else if(newBallX - ball_radius < 10)
+			p2_score++; 
+		
 		// bounce back when we hit paddles
+		sound();
 		ballVel[0] = -ballVel[0];
 	}
 	else
@@ -306,9 +309,10 @@ void update_ball_with_paddle()
 		ballPos[0] = newBallX;
 	}
 	
-	if(newBallY > gameHeight+24 || newBallY < 26) // hit the top/bottom of the game
+	if(newBallY + ball_radius > gameHeight+24 || newBallY - ball_radius < 26) // hit the top/bottom of the game
 	{
 		// bounce back for now
+		sound();
 		ballVel[1] = -ballVel[1];
 	}
 	else
@@ -319,16 +323,9 @@ void update_ball_with_paddle()
 	return;
 }
 
-int is_scored()
-{
-	if(ballPos[0] > gameWidth)
-		return 1;
-	if(ballPos[0] < 10)
-		return 2;
-	else
-		return 0;
-}
-
+/* Setup light sensors to start in state mode and disable all lego interrupts
+ *
+ */
 void light_setup()
 {
    // Need to disable any buttons setup so we can choose in game which controllers we want
@@ -342,6 +339,9 @@ void light_setup()
    return;
 }
 
+/* Setup the buttons to trigger on interrupts when they're pressed
+ *
+ */
 void buttons_setup()
 {
 	volatile int* GPIO_ptr = (int*) GPIO;
@@ -352,8 +352,8 @@ void buttons_setup()
 
    /* We use F because the lego push buttons have a value of F when they're
     * not pressed. If we use F, the interrupt will trigger when the value becomes
-	* lower than F. ie, it's been pressed.
-	*/
+    * lower than F. ie, it's been pressed.
+    */
    
    *(GPIO_ptr) = 0xffdfffff; // Turn on State mode
 
@@ -369,6 +369,9 @@ void buttons_setup()
    asm (	"wrctl   ctl3, r4"	); // Enable our line for interrupts
 }
 
+/* Setup the direction register and either light sensors or push buttons
+ *
+ */
 void lego_setup()
 {
 	volatile int* Lego_dir = (int *) LEGODirectionRegister;
@@ -380,12 +383,22 @@ void lego_setup()
       light_setup();
 }
 
+/* Setup the game timer to interrupt every time it ticks
+ *
+ */
 void timer_setup()
 {
    // Configure the timeout period to 1/60 seconds for a 60fps framerate
    *(TimerStatus) = 0x0;
-   *(TimerTimeoutL)=0xB735;
-   *(TimerTimeoutH)=0x000C; // This is 50000000/60
+   
+   int game_rate = 50000000/60; // timer ticks at 50000000 per second. Divide by 60 to get 60fps
+   
+   game_rate *= 2; // Slow down the game a bit so game speed isn't ridiculous
+   
+   game_rate /= game_speed; // take the game speed global variable into account
+   
+   *(TimerTimeoutL)= game_rate & 0xFFFF; // Lo bits
+   *(TimerTimeoutH)=(game_rate & 0xFFFF0000) >> 16 ; // Hi bits
    
    // Configure timer to start counting with interrupts enabled
    asm (	"movi    r4, 0x1"	);
@@ -395,9 +408,12 @@ void timer_setup()
    asm (	"movia   r5, 0x1"	); // IRQ line for Timer
    asm (	"or      r4, r4, r5");
    asm (	"wrctl   ctl3, r4"	); // Enable our line for interrupts
-   *(TimerControl)=7;
+   *(TimerControl)=7; // Interrupt + continue + start
 }
 
+/* Poll the light sensors, reading the values and interpolating in
+ * order to get a cleaner reading of the controller height
+ */
 void poll_light_sensors()
 {
 	volatile int* GPIO_ptr = (int*) GPIO;
@@ -405,34 +421,34 @@ void poll_light_sensors()
 	// controller1Height
 	do
 	{
-		(*GPIO_ptr) = 0xfffffbff;
+		(*GPIO_ptr) = 0xfffffbff; // keep polling light sensor 1
 
-	} while(((*GPIO_ptr) >> 11 & 0x1) == 0);
+	} while(((*GPIO_ptr) >> 11 & 0x1) == 0); // Only exit when we have a valid state
 
 	int t_value = (((*GPIO_ptr) >> 27) & 0x0f); // Read value
 	t_value -= 3; // Normalize to 0
-	(*leds) = (1 << t_value);
 	
-	controller1Height = ControllerMinHeight + (t_value / 7) * (ControllerMaxHeight - ControllerMinHeight); 
+	// Use linear interpolation between minheight and maxheight
+	p1_h = ControllerMinHeight + (t_value) * ((ControllerMaxHeight - ControllerMinHeight) / 7); 
 	
 	// controller2Height
 	do
 	{
-		(*GPIO_ptr) = 0xffffefff;
+		(*GPIO_ptr) = 0xffffefff; // same thing, but now for sensor 2
 
 	} while(((*GPIO_ptr) >> 13 & 0x1) == 0);
 
-	controller2Height = (((*GPIO_ptr) >> 27) & 0x0f); // Read value
-	controller2Height -= 3; // Normalize to 0
+	t_value = (((*GPIO_ptr) >> 27) & 0x0f); // Read value
+	t_value -= 3; // Normalize to 0
+	
+	// Use linear interpolation between minheight and maxheight
+	p2_h = ControllerMinHeight + (t_value) * ((ControllerMaxHeight - ControllerMinHeight) / 7); 
 }
 
-int main()
-{
-   controller1Height = 88; // Initialize height of paddles to middle of screen
-   controller2Height = 88;
-   
-   prev_controller1Height = 88;
-   prev_controller2Height = 88;
+/* intialize variables for game
+ *
+ */
+void game_setup(){
 
    ballPos[0] = 160; // Initialize the ball to be in the middle of the screen
    ballPos[1] = 120;
@@ -442,47 +458,70 @@ int main()
 
    volatile int* leds = (int *)RED_LEDS;
    (*leds) = 0; // clear LEDs on startup to restart any previous interrupts
-   using_controllers = 1;
+   
+   // This variable determines if we're using the light sensors or controllers
+   using_controllers = 0; 
 	
-   timer_setup();
-   lego_setup();
-   fill_screen(C_BLACK);
-   subset(4, C_GREEN);
-   meta_bar(C_BLACK);
-   border(8,24,2,C_WHITE);
+   get_and_set(); // Setup game UI + speeds
+   timer_setup(); // Setup game timer
+   lego_setup(); // setup lego interrupts for buttons or state mode for sensors
+   
+   first_draw(); // on first draw, only draw what won't be changing
+	
+}
+
+/* busy loop for pausing. Need to poll push buttons to see if we're paused
+ *
+ */
+void busyloop(){
+
+	if(*PUSHBUTTONS){ // If we're pressed;
+		game_paused = 1; // we're paused
+		do{
+			asm("nop"); // keep doing nothing until user releases
+		} while(*PUSHBUTTONS);
+		
+		game_paused = 0; // unpause game
+		game_setup(); // resetup with new variables
+	}
+		
+}
+
+int main()
+{
+	game_setup();
+   
    if(using_controllers)
    {
       while(1){
-		 
+		 busyloop();
 	     asm (	"nop"); // Loop infinitely so we can do everything in interrupts without our program exiting
    	  }
    }
    else
    {
    	   while(1){
+		  busyloop();
           poll_light_sensors(); // Keep polling light sensors. Game will update with interrupts
    	   }
    }
 }
 
-/* sound module will be used later for making dings for ball
+/* sound module for making dings for ball
  */
-int main_sound()
+int sound()
 {
    volatile int * audio_ptr = (int *) 0xFF203040; // audio port
-   long sineWave[] = {0, 0.5, 0.8660254, 1, 0.8660254, 0.5, 0, -0.5, -0.8660254, -1, -0.8660254, -0.5};
-
-   	/* used for audio record/playback */
-	int fifospace, leftdata, rightdata;
-	int buffer_index = 0;
+   long sineWave[] = {-1, 0, 1, 0}; // just a basic description of a wave
    
-   while (1)
-   {
+   int j;
+	for(j = 0; j < 5; j++){ // 5 cycles
 		int i;
-		for(i = 0; i < sizeof(sineWave)/sizeof(long); i++){
+		int factor = 40; // period of 40
+		for(i = 0; i < ((sizeof(sineWave)/sizeof(long)) * factor); i++){
 			// Write to both channels
-			*(audio_ptr + 2) = (1<<31) * sineWave[i];
-			*(audio_ptr + 3) = (1<<31) * sineWave[i];
+			*(audio_ptr + 2) = (1<<25) * sineWave[i/factor];
+			*(audio_ptr + 3) = (1<<25) * sineWave[i/factor];
 	   }
-    }
+	}
 }
