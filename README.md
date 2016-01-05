@@ -7,6 +7,12 @@ through VGA. Using the various switches on the DE1, the players can control padd
 game mode, audio toggle and main menu screen. The game is built on a strong foundation and
 allows for customization through editing the C interface code.
 
+## Controller Based
+![GitHub Logo](/BlockDiagram3.png)
+
+## Light Sensor Based
+![GitHub Logo](/BlockDiagram4.png)
+
 ### TECHNOLOGIES USED
 * 5 interrupts
  * Simultaneously occurring
