@@ -1,4 +1,4 @@
-## HoverPong
+# HoverPong
 
 Hover Pong is a take on the popular game implemented in C and assembly on the DE1 board.
 Using Lego pressure buttons and light sensors, we created two controller types: a single axis
@@ -7,7 +7,7 @@ through VGA. Using the various switches on the DE1, the players can control padd
 game mode, audio toggle and main menu screen. The game is built on a strong foundation and
 allows for customization through editing the C interface code.
 
-# TECHNOLOGIES USED
+### TECHNOLOGIES USED
 * 5 interrupts
  * Simultaneously occurring
  * Lego pressure buttons (4 total, 2 per controller)
@@ -23,7 +23,7 @@ allows for customization through editing the C interface code.
 * 1 complex device
  * Used audio codec for interactive feedback on collisions with wall & paddle
  
-# COMPLEXITY, ALGORITHMS & ADDITIONAL NOTES
+### COMPLEXITY, ALGORITHMS & ADDITIONAL NOTES
 * Implemented collision detection system
 * Usage of a light sensor to interpolate the values of our controller based on rigid sensor
 input
@@ -33,7 +33,7 @@ menu screen, animated user interface)
 pixel by pixel and by arbitrary pixels as well. This prompted quick developmental
 changes in the UI as we saw fit.
 
-# PROJECT LOG
+### PROJECT LOG
 
 __November 17, 2015__
 
